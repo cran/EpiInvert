@@ -1,4 +1,12 @@
-# EpiInvert 0.1.1
+# EpiInvert 0.2.0 (July 2022)
+
+* We include the management of weekly aggregated incidence data where every 
+week a single data is communicated with the accumulated incidence in the last 7 days. 
+
+* We include EpiInvertForecast, a procedure for the short time forecast of the 
+restored incidence curve.
+
+# EpiInvert 0.1.1 (May 2022)
 
 * README.md has been simplified to avoid problems with the render of mathematical 
 formulas.
@@ -10,6 +18,6 @@ with the render of mathematical formulas.
 
 * None of EpiInvert's functions, examples or tests have been changed in this version.
 
-# EpiInvert 0.1.0
+# EpiInvert 0.1.0 (May 2022)
 
 * First EpiInvert version

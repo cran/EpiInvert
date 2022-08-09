@@ -40,6 +40,7 @@ test_that("EpiInvert using USA data", {
   res <-  EpiInvert(incidence$USA,
                     incidence$date[length(incidence$date)],
                     festives$USA, 
+                    
                     EpiInvert::select_params(list( mean_si = 11,sd_si=7,shift_si=-2))
                     )
   x <- round(res$power_a-0.003,digits=2)
@@ -53,7 +54,17 @@ test_that("EpiInvert using USA data", {
   x <- round(res$power_a-0.003,digits=2)
   expect_equal(x,1.05)
   
+  # test using weekly aggregated incidence 
+  data(incidence_weekly_aggregated)
+  res <- EpiInvert(incidence_weekly_aggregated$FRA,"2022-05-05",festives$FRA,
+                    select_params(list(incidence_weekly_aggregated = TRUE)))
+  x <- round(res$power_a-0.001,digits=2)
+  expect_equal(x,1.25)
   
-
+  # EpiInvertForecast function test
+  data("restored_incidence_database")
+  forecast <-  EpiInvertForecast(res,restored_incidence_database)
+  x <- round(forecast$i_restored_forecast[1]-0.19,digits=0)
+  expect_equal(x,36024)
   
 })

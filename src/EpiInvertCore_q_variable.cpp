@@ -58,10 +58,10 @@ vector<double> data_pre_processing(
   
   if(i.size()<20){
 #ifndef R_COMPILE
-    printf("The number of samples is too small : %d samples\n",(int) i.size());
+    //printf("The number of samples is too small : %d samples\n",(int) i.size());
     char mes[300];
     sprintf(mes,"The number of samples is too small : %d samples\n",(int) i.size());
-    printf("%s\n",mes);
+    //printf("%s\n",mes);
     fprintf_demo_failure(mes);
 #endif
     return vector<double>();
@@ -497,7 +497,7 @@ void Rt_estimation( //III
 #ifndef R_COMPILE
     char mes[300];
     sprintf(mes,"Problems computing Rt\n");
-    printf("%s\n",mes);
+    //printf("%s\n",mes);
     fprintf_demo_failure(mes);
 #endif
     return;
@@ -705,11 +705,11 @@ double Rt_q_estimation(
   /// ALTERNATE ALGORITHM TO OPTIMIZE R AND q
   double error_min=1e20;
 #ifndef R_COMPILE
-  printf("iter : ");
+  //printf("iter : ");
 #endif
   for(iter_alternate_optimization=1;iter_alternate_optimization<=MaxIter;iter_alternate_optimization++){
 #ifndef R_COMPILE
-    printf("%d,",iter_alternate_optimization);
+    //printf("%d,",iter_alternate_optimization);
 #endif
     
     /// COMPUTATION WEEKLY BIAS CORRECTION FACTORS
@@ -762,7 +762,7 @@ double Rt_q_estimation(
     Rt_estimation(iBiasCor,Pi,si_distr,f0,Rt_regularization_weight,nf,RenewalEquationModel,R,iBiasCor,NweeksToKeepIncidenceSum);
   }
 #ifndef R_COMPILE
-  printf("\n");
+  //printf("\n");
 #endif
   return error_min;
 }
@@ -797,8 +797,18 @@ void EpiInvertEstimate(
     const double Rt_regularization_weight /** REGULARIZATION WEIGHT PARAMETER OF EpiInvert METHOD (DEFAULT VALUE: 5)*/,
     const double seasonality_regularization_weight /** WEIGHT PARAMETER OF THE REGULARIZATION  TERM FOR THE SEASONALITY q (DEFAULT VALUE 5) */,
     const int max_time_interval /** MAX SIZE OF THE INCIDENCE DATA USED TO COMPUTE Rt (DEFAULT VALUE: 9999). THIS PARAMETER IS USED TO REDUCE HE COMPUTATIONAL COST OF THE ALGORITHM WHEN WE ARE JUST INTERESTED IN THE LAST PART OF THE SEQUENCE */,
-    const int NweeksToKeepIncidenceSum /** WE CONSTRAINT ALL THE ESTIMATED INCIDENCE CURVE TO KEEP THE ADDITION OF THE ORIGINAL INCIDENCE IN INTERVALS OF SIZE NweeksToKeepIncidenceSum*7 DAYS*/
+    const int NweeksToKeepIncidenceSum /** WE CONSTRAINT ALL THE ESTIMATED INCIDENCE CURVE TO KEEP THE ADDITION OF THE ORIGINAL INCIDENCE IN INTERVALS OF SIZE NweeksToKeepIncidenceSum*7 DAYS*/,
+    bool weekly_aggregated_incidence /** IF TRUE, EACH INCIDENCE VALUE CORRESPONDS TO THE LAST 7-DAY AGGREGATED INCIDENCE */
 ){
+  /// WE MANAGE THE CASE OF WEEKLY AGGREGATED INCIDENCE
+  if(weekly_aggregated_incidence==true){
+    vector<double> i_original2(7*i_original.size());
+    for(int k=0,m=0;k<(int) i_original.size();k++){
+      double value=i_original[k]/7.;
+      for(int n=0;n<7;n++) i_original2[m++]=value;
+    }
+    i_original=i_original2;
+  }
   
   /// RENEWAL EQUATION MODEL
   bool RenewalEquationModel = CASE;
@@ -819,15 +829,15 @@ void EpiInvertEstimate(
   iV0.push_back(i_original);
   
 #ifndef R_COMPILE
-  printf("-> NUMBER OF SAMPLES OF THE ORIGINAL INCIDENCE CURVE : %d \n",(int) i_original.size());
-  printf("-> PRE-PROCESSING OF THE ORIGINAL INCIDENCE CURVE\n");
+  //printf("-> NUMBER OF SAMPLES OF THE ORIGINAL INCIDENCE CURVE : %d \n",(int) i_original.size());
+  //printf("-> PRE-PROCESSING OF THE ORIGINAL INCIDENCE CURVE\n");
 #endif
   
   i_original=data_pre_processing(iV0,0,max_time_interval);
   
 #ifndef R_COMPILE
-  printf("-> NUMBER OF SAMPLES OF THE ORIGINAL INCIDENCE CURVE AFTER PRE-PROCESSING: %d \n",(int) i_original.size());
-  printf("-> NUMBER OF FESTIVE OR ANOMALOUS DAYS USED : %d \n",(int) festive_days.size());
+  //printf("-> NUMBER OF SAMPLES OF THE ORIGINAL INCIDENCE CURVE AFTER PRE-PROCESSING: %d \n",(int) i_original.size());
+  //printf("-> NUMBER OF FESTIVE OR ANOMALOUS DAYS USED : %d \n",(int) festive_days.size());
 #endif
   
   
@@ -855,7 +865,7 @@ void EpiInvertEstimate(
   vector<double> nf=back_percentil(i_festive,21);
   
 #ifndef R_COMPILE
-  printf("-> EpiInvert COMPUTATION\n");
+  //printf("-> EpiInvert COMPUTATION\n");
 #endif
   
   
@@ -865,7 +875,7 @@ void EpiInvertEstimate(
 #endif
   for(int m=0;m<NdaysEmpiricalVariability;m++){
 #ifndef R_COMPILE
-    printf("  -> current day - %d : ",m);
+    //printf("  -> current day - %d : ",m);
 #endif
     
     /// LOCAL VARIABLES
@@ -940,6 +950,7 @@ void EpiInvertEstimate(
     if(aux95>0) Rt_CI95[k]+=aux95;
   }
   
+  
   /// WE SET THE OUTPUT VARIABLES
   i_restored=iV[0];
   Rt=RtV[0];
@@ -948,6 +959,8 @@ void EpiInvertEstimate(
   iter_alternate_optimization=iter_alternate_optimizationV[0];
   i_bias_free=vector<double>(i_festive.size());
   for(int k=0;k< (int) i_bias_free.size();k++) i_bias_free[k]=i_festive[k]*seasonality[k];
+  
+  //for(int k=0;k<i_restored.size();k++) printf("%lf\n",i_restored[k]);
   
   /// ERROR ANALYSIS
   vector<double> log_i_rest, log_abs_dif;
@@ -981,8 +994,9 @@ void EpiInvertEstimate(
   
   dates=vector<string>(i_original.size());
   festive=vector<bool>(i_original.size());
+  //printf("daily_festive_day.size()=%d, festive.size()=%d\n",(int) daily_festive_day.size(),(int) festive.size());
   for(int k=0;k<(int) i_original.size();k++){
-    time_t t2=current_day-(i_original.size()-1-k)*86400;
+    time_t t2=current_day-(i_original.size()-1-k)*86400+86400/2;
     struct tm * timeinfo;
     timeinfo = localtime (&t2);
     char buffer [80];
@@ -992,6 +1006,110 @@ void EpiInvertEstimate(
   }
 }
 
+/// ----------------------------------------------------------------------------------------
+/// FORECAST OF THE RESTORED INCIDENCE USING A LEARNING PROCEDURE
+/// ----------------------------------------------------------------------------------------
+vector<double> IncidenceForecastByLearning(
+    vector<double> &ir /** RESTORED INCIDENCE TO BE FORECASTED */,
+    const string last_incidence_date /** DATE OF THE LAST DATA IN THE FORMAT YYYY-MM-DD */,
+    vector<double> &q /** 7-DAY QUASI-PERIODIC WEKLY BIAS CORRECTION FACTORS */,
+    vector< vector <double > > &ir_database,
+    double lambda /** PARAMETER IN THE WEIGHTED AVERAGE OF INCIDENCE SEQUENCES (IF NEGATIVE WE USE THE PRE-ESTIMATED ONES */,
+                                                                                double mu /** PARAMETER TO ESTIMATE THE DISTANCE BETWEEN RESTORED INCIDENCE CURVES*/,
+                                                                                vector <double> &CI50 /** 50% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI75 /** 75% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI90 /** 90% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI95 /** 95% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &i0_forecast /** FORECAST OF THE ORIGINAL INCIDENCE */,
+                                                                                vector<string> &dates /** DATE ASSOCIATED TO EACH INCIDENCE DATUM */
+)
+{
+  /// WE CHECK THE INPUT
+  if( ir.size()<28 || q.size()!=ir.size() ) return vector<double>();
+  
+  /// REFERENCE 50% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c50[28]={0.042508,0.054770,0.068168,0.081978,0.096363,0.111018,0.125447,0.139321,0.153157,0.167250,0.181470,0.195171,0.209277,0.223595,0.237681,0.251021,
+                  0.265775,0.279932,0.296414,0.312585,0.328543,0.345365,0.362289,0.380731,0.397672,0.415894,0.434526,0.453136};
+  /// REFERENCE 75% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c75[28]={0.081978,0.105534,0.131015,0.157528,0.184099,0.211136,0.236895,0.261647,0.286255,0.310039,0.332936,0.355424,0.377950,0.399522,0.420463,0.441227,0.464055,
+                  0.486819,0.508160,0.528966,0.550036,0.570330,0.591685,0.611198,0.630934,0.650795,0.671670,0.690735};
+  /// REFERENCE 90% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c90[28]={0.139130,0.178687,0.222212,0.268017,0.313669,0.358350,0.401996,0.444749,0.485644,0.524075,0.560992,0.592548,0.620591,0.648606,0.674875,0.699695,0.720586,
+                  0.744659,0.764860,0.784399,0.805348,0.825345,0.843817,0.865360,0.885556,0.903012,0.917678,0.936678};
+  /// REFERENCE 95% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c95[28]={0.194120,0.246874,0.305963,0.370376,0.438343,0.503850,0.568111,0.629777,0.691450,0.750809,0.812840,0.878160,0.933841,0.987263,1.044576,1.097479,1.164950,1.233489,
+                  1.287934,1.344992,1.422996,1.504297,1.587260,1.643302,1.721445,1.784263,1.845480,1.906459};
+  
+  /// NORMALIZATION OF THE LAST 28 DAYS OR THE RESTORED INCIDENCE
+  vector<double> u(28);
+  double sum=0;
+  for(int k=0;k<28;k++){
+    u[k]=ir[ir.size()-28+k];
+    sum+=u[k];
+  }
+  sum/=28;
+  double u0=u[27];
+  for(int k=0;k<(int) u.size();k++) u[k]/=sum;
+  
+  /// 28-DAY FORECAST OF THE RESTORED INCIDENCE USING A WEIGTHED AVERAGE OF THE RESTORED INCIDENCE DATABASE
+  vector<double> v(56,0.);
+  for(int k=0;k<(int) ir_database.size();k++){
+    /// COMPUTATION OF THE AVERAGE DISTANCE BETWEEN u AND THE DATABASE INSTANCE
+    double L1=0;
+    for(int m=0;m<28;m++) L1+=fabs(u[m]-ir_database[k][m])*exp(-mu*(27-m));
+    L1/=28;
+    /// COMPUTATION OF THE WEIGHT
+    double w=exp(-lambda*L1);
+    /// COMPUTATION OF THE CONTRIBUTION OF THIS DATABASE INSTANCE TO THE FORECAST
+    for(int m=0;m<(int) v.size();m++) v[m]+=w*ir_database[k][m];
+  }
+  
+  /// WE SCALE THE FORECAST TO u[27]=v[27] (THAT IS, WE IMPOSE CONTINUITY IN THE FORECAST ESTIMATION)
+  double v0=v[27];
+  for(int m=0;m<(int) v.size();m++) v[m]*=u0/v0;
+  
+  /// WE STORE THE RESULTS
+  vector<double> ir_forecast(28);
+  i0_forecast=vector<double>(28);
+  CI50=vector<double>(28);
+  CI75=vector<double>(28);
+  CI90=vector<double>(28);
+  CI95=vector<double>(28);
+  dates=vector<string>(28);
+  
+  for(int k=0;k<28;k++){
+    ir_forecast[k]=v[k+28];
+    i0_forecast[k]=ir_forecast[k]/q[q.size()-7+k%7];
+    CI50[k]=c50[k]*ir_forecast[k];
+    CI75[k]=c75[k]*ir_forecast[k];
+    CI90[k]=c90[k]*ir_forecast[k];
+    CI95[k]=c95[k]*ir_forecast[k];
+    time_t current_day = string2date(last_incidence_date.c_str());
+    time_t t2=current_day + (k+1)*86400+86400/2;
+    struct tm * timeinfo;
+    timeinfo = localtime (&t2);
+    char buffer [80];
+    strftime (buffer,80,"%Y-%m-%d",timeinfo);
+    dates[k]=string(buffer);
+  }
+  
+  //  /// TESTING
+  //  FILE *f;
+  //  f=fopen ("forecast.csv", "w");
+  //  fprintf(f,"date;ir_forecast;i0_forecast;CI95_ir_forecast -;CI95_ir_forecast +\n");
+  //  for(int k=0;k<28;k++){
+  //      fprintf(f,";%lf;%lf\n",v[k],ir[ir.size()-28+k]);
+  //  }
+  //  for(int k=0;k<28;k++){
+  //    fprintf(f,"%s;%lf;%lf;%lf;%lf\n",dates[k].c_str(),ir_forecast[k],i0_forecast[k],
+  //            ir_forecast[k]-CI95[k],ir_forecast[k]+CI95[k]);
+  //  }
+  //  fclose(f);
+  
+  
+  return ir_forecast;
+  
+}
 
 ///----------------------------------------------------------------------------------------
 /// EpiInvert ESTIMATION. IT RETURNS THE TIME WHERE Rt STARTS TO BE COMPUTED (A NEGATIVE VALUE IN CASE OF FAILURE)
@@ -1018,7 +1136,7 @@ int EpiInvert(
                                                                                                       double seasonality_regularization_weight /** weight of the regularization term for the seasonality q */
 ){
 #ifndef R_COMPILE
-  printf("-> READING THE SERIAL INTERVAL FROM %s\n",si_distr_filename);
+  //printf("-> READING THE SERIAL INTERVAL FROM %s\n",si_distr_filename);
 #endif
   
   vector<double> si_distr;
@@ -1034,7 +1152,7 @@ int EpiInvert(
   if(i0.size()>0) iV0.push_back(i0); /// the incidence is directly provided as parameter
   else{
 #ifndef R_COMPILE
-    printf("-> READING THE DATA FROM %s\n",incidence_filename);
+    //printf("-> READING THE DATA FROM %s\n",incidence_filename);
 #endif
     
     iV0=read_data_multiple(incidence_filename,current_day);
@@ -1085,7 +1203,7 @@ int EpiInvert(
   /// COMPUTATION OF THE PERCENTIL IN THE LAST 21 DAYS TO NORMALIZE THE INCIDENCE CURVE
   vector<double> nf=back_percentil(i0,21);
 #ifndef R_COMPILE
-  printf("-> EpiInvert COMPUTATION\n");
+  //printf("-> EpiInvert COMPUTATION\n");
 #endif
   
   
@@ -1494,7 +1612,7 @@ void write_files(
     else fprintf(g,";");
     if(current_day<1) fprintf(g,";;");
     else{
-      time_t t2=current_day-(i0.size()-1-k)*86400;
+      time_t t2=current_day-(i0.size()-1-k)*86400+86400/2;
       struct tm * timeinfo;
       timeinfo = localtime (&t2);
       char buffer [80];
