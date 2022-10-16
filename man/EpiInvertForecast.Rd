@@ -3,11 +3,17 @@
 \name{EpiInvertForecast}
 \alias{EpiInvertForecast}
 \title{\code{EpiInvertForecast} computes a 28-day forecast of the restored incidence 
-curve including confidence interval radius using the percentiles 50,75,90 and 95.
+curve including a 95% confidence interval 
 using the weekly seasonality, from the forecasted restored incidence curve we
 also estimate a  28-day forecast of the original incidence curve.}
 \usage{
-EpiInvertForecast(EpiInvert_result, restored_incidence_database)
+EpiInvertForecast(
+  EpiInvert_result,
+  restored_incidence_database,
+  type = "median",
+  trend_sentiment = 0,
+  NumberForecastAdditionalDays = 0
+)
 }
 \arguments{
 \item{EpiInvert_result}{output list of the EpiInvert execution including, in particular,
@@ -17,6 +23,21 @@ the restored incidence curve and the seasonality.}
 restored incidence curves computed by EpiInvert using real data. Each 
 restored incidence curve includes the last 56 values of the sequence. That is
 this database can be viewed as a matrix of size 27,418  X 56}
+
+\item{type}{string with the forecast option. It can be "mean" or "median".}
+
+\item{trend_sentiment}{"a priori" knowledge about the future indicende evolution. 
+== 0 means that you are neutral about the future trend 
+> 0  means that you expect that the future trend is higher than the expected one 
+     using all database curves. the value represents the percentage of database 
+     curves removed before computing the forecast. 
+     the curves removed are the ones with lowest growth in the last 28 days.  
+< 0  means that you expect that the future trend is higher than the expected one 
+     using all database curves. the meaning of the value is similar to the previous 
+     case, but removing the curves with the highest growth in the last 28 days.}
+
+\item{NumberForecastAdditionalDays}{The number of forecast days is 28. With this
+parameter you can add extra forecast days using linear extrapolation.}
 }
 \value{
 {
@@ -56,7 +77,7 @@ this database can be viewed as a matrix of size 27,418  X 56}
 }
 \description{
 \code{EpiInvertForecast} computes a 28-day forecast of the restored incidence 
-curve including confidence interval radius using the percentiles 50,75,90 and 95.
+curve including a 95% confidence interval 
 using the weekly seasonality, from the forecasted restored incidence curve we
 also estimate a  28-day forecast of the original incidence curve.
 }

@@ -156,24 +156,14 @@ EpiInvert_plot <- function(x, what = "all",date_start="1000-01-01",date_end="300
 #' @param EpiInvert_results the list returned by the EpiInvert execution
 #'
 #' @param Forecast the list returned by the EpiInvertForecast execution
-#'
-#' @param what one of the following drawing options: 
-#' 
-#'  \itemize{
-#'  \item{CI50}{: use confidence interval for the restored incidence forecast with percentil 50.}
-#'  \item{CI75}{: use confidence interval for the restored incidence forecast with percentil 75. }
-#'  \item{CI90}{: use confidence interval for the restored incidence forecast with percentil 90. }
-#'  \item{CI95}{: use confidence interval for the restored incidence forecast with percentil 95. }
-#'  
-#' }
 #' 
 #' @return a plot with the last 28 days of the original and restored incidence curves and a 28-day 
-#' forecast of the same curves. It also includes a shaded area with an empiric confidence interval
+#' forecast of the same curves. It also includes a shaded area with a 95% empiric confidence interval
 #' of the restored incidence forecast estimation
 #' 
 
 #' @export
-EpiInvertForecast_plot <- function(EpiInvert_results,Forecast,what = "CI95"){
+EpiInvertForecast_plot <- function(EpiInvert_results,Forecast){
   
   Do <- utils::tail(EpiInvert_results$dates,28)
   Oo <- utils::tail(EpiInvert_results$i_original,28)
@@ -182,36 +172,21 @@ EpiInvertForecast_plot <- function(EpiInvert_results,Forecast,what = "CI95"){
   Df <- Forecast$dates
   Of <- Forecast$i_original_forecast
   Rf <- Forecast$i_restored_forecast
-  Cf50 <- Forecast$i_restored_forecast_CI50
-  Cf75 <- Forecast$i_restored_forecast_CI75
-  Cf90 <- Forecast$i_restored_forecast_CI90
-  Cf95 <- Forecast$i_restored_forecast_CI95
+  Cf025 <- Forecast$i_restored_forecast_CI025
+#  Cf25 <- Forecast$i_restored_forecast_CI25
+#  Cf75 <- Forecast$i_restored_forecast_CI75
+  Cf975 <- Forecast$i_restored_forecast_CI975
   
-  if (what == "CI50") {
-    CImin <- pmax(Rf-Cf50,0)
-    CImax <- Rf+Cf50
-  }
-  else if (what == "CI75") {
-    CImin <- pmax(Rf-Cf75,0)
-    CImax <- Rf+Cf75
-  }
-  else if (what == "CI90") {
-    CImin <- pmax(Rf-Cf90,0)
-    CImax <- Rf+Cf90
-  }
-  else if (what == "CI95") {
-    CImin <- pmax(Rf-Cf95,0)
-    CImax <- Rf+Cf95
-  }
-  else {
-    stop("The drawing option is not recognized. The options are \"CI50\", \"CI75\", \"CI90\" and \"CI95\" ")
-  }  
-   
+  CImin <- pmax(Rf+Cf025,0)
+  CImax <- Rf+Cf975
+  
+  Nf <- length(Forecast$dates)
+  
   #utils::globalVariables(c("date", "incid", "legend", "ymi", "yma"))
   dfr <- data.frame(
         date = c(as.Date(Do),as.Date(Do),as.Date(Df),as.Date(Df)),
         incid = c(Oo,Ro,Of,Rf),
-        legend2 = c(rep("original incidence",28),rep("restored incidence",28),rep("forecast original incidence",28),rep("forecast restored incidence",28)),
+        legend2 = c(rep("original incidence",28),rep("restored incidence",28),rep("forecast original incidence",Nf),rep("forecast restored incidence",Nf)),
         ymi = c(Oo,Ro,Of,CImin),
         yma = c(Oo,Ro,Of,CImax)
   )
@@ -235,4 +210,6 @@ EpiInvertForecast_plot <- function(EpiInvert_results,Forecast,what = "CI95"){
   p <- ggplot2::ggplotGrob(g)
   grid::grid.draw(rbind(p))
  
-  }
+}
+
+

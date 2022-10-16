@@ -44,6 +44,8 @@
 #'   \item{incidence_weekly_aggregated}{: a boolean value which determines if we use weekly aggregated 
 #'  incidence. In such case  every week a single data is stored with the accumulated incidence in the last 
 #'  7 days (the default value is FALSE).}
+#'   \item{NweeksToKeepIncidenceSum}{: number of weeks to keep the value of the incidence accumulation. 
+#'    The default is 2.}
 #' }
 #' 
 #'
@@ -187,6 +189,9 @@ EpiInvert <- function(incid,
     stop("The first argument of EpiInvert() is not numeric")
   }
   
+  last_incidence_date <- format(as.Date(last_incidence_date), "%Y-%m-%d")
+  festive_days <- format(as.Date(festive_days), "%Y-%m-%d")
+  
   # CHECK IF last_incidence_date IS A DATE IN THE FORMAT YYYY-MM-DD
   if(is.character(last_incidence_date)!=TRUE){
     stop("last_incidence_date must be in the format 'YYYY-MM-DD'")
@@ -214,7 +219,18 @@ EpiInvert <- function(incid,
   if(length(festive_days2)==0){
     stop("festive_days must be in the format 'YYYY-MM-DD")
   }
-
+  
+  # COMPUTING THE LAST DAY
+  # i <- length(incid)
+  #  while (i >=0) {
+  #    if(incid[i]!=0){
+  #     break
+  #   }
+  #   last_incidence_date=as.Date(last_incidence_date)-1
+  #  i <- i - 1
+  #  }
+  #  last_incidence_date=toString(last_incidence_date)
+  
   # WE CALL THE MAIN Rcpp - C++ FUNCTION TO COMPUTE EpiInvert 
   results <- EpiInvertC(incid,
                         last_incidence_date,
@@ -227,7 +243,8 @@ EpiInvert <- function(incid,
                         config$shift_si,
                         config$Rt_regularization_weight,
                         config$seasonality_regularization_weight,
-                        config$incidence_weekly_aggregated
+                        config$incidence_weekly_aggregated,
+                        config$NweeksToKeepIncidenceSum
                       )
   
   class(results) <- "estimate_EpiInvert"
@@ -240,7 +257,7 @@ EpiInvert <- function(incid,
 
 #' @title 
 #' \code{EpiInvertForecast} computes a 28-day forecast of the restored incidence 
-#' curve including confidence interval radius using the percentiles 50,75,90 and 95.
+#' curve including a 95% confidence interval 
 #' using the weekly seasonality, from the forecasted restored incidence curve we
 #' also estimate a  28-day forecast of the original incidence curve. 
 #'
@@ -252,7 +269,23 @@ EpiInvert <- function(incid,
 #' restored incidence curve includes the last 56 values of the sequence. That is
 #' this database can be viewed as a matrix of size 27,418  X 56
 #' 
+#' @param type string with the forecast option. It can be "mean" or "median". 
+#' 
+#' @param NumberForecastAdditionalDays The number of forecast days is 28. With this
+#' parameter you can add extra forecast days using linear extrapolation. 
+#' 
+#' @param trend_sentiment "a priori" knowledge about the future indicende evolution. 
+#'    == 0 means that you are neutral about the future trend 
+#'    > 0  means that you expect that the future trend is higher than the expected one 
+#'         using all database curves. the value represents the percentage of database 
+#'         curves removed before computing the forecast The curves removed are the ones 
+#'         with lowest growth in the last 28 days.  
+#'    < 0  means that you expect that the future trend is higher than the expected one 
+#'         using all database curves. the meaning of the value is similar to the previous 
+#'         case, but removing the curves with the highest growth in the last 28 days.
+#'    
 #'
+#' 
 #' @return {
 #'   a list with components:
 #'   \itemize{
@@ -346,7 +379,7 @@ EpiInvert <- function(incid,
 #' @useDynLib EpiInvert, .registration=TRUE
 #' @importFrom Rcpp evalCpp
 #' @export
-EpiInvertForecast <- function(EpiInvert_result,restored_incidence_database) {
+EpiInvertForecast <- function(EpiInvert_result,restored_incidence_database,type="median",trend_sentiment=0,NumberForecastAdditionalDays=0) {
   
   # CHECK IF restored_incidence_database IS NUMERIC 
   if(is.numeric(restored_incidence_database)!=TRUE){
@@ -358,10 +391,14 @@ EpiInvertForecast <- function(EpiInvert_result,restored_incidence_database) {
   
   # WE CALL THE MAIN Rcpp - C++ FUNCTION TO COMPUTE EpiInvertForeCast 
   results <- EpiInvertForecastC(
+    EpiInvert_result$i_original,
     EpiInvert_result$i_restored,
     str,
     EpiInvert_result$seasonality,
-    restored_incidence_database
+    restored_incidence_database,
+    type,
+    NumberForecastAdditionalDays,
+    trend_sentiment
   )
   
   return(results)

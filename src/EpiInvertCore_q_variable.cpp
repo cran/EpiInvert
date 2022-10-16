@@ -15,6 +15,145 @@
 
 #include "EpiInvertCore_q_variable.h"
 
+/// ----------------------------------------------------------------------------------------
+/// EXTRACT SIMILAR CURVES IN THE DATABASE
+/// ----------------------------------------------------------------------------------------
+vector<int> extract_similar_from_database(
+    vector<double> &i,
+    vector< vector<double> > &ir,
+    double mu,
+    int Nsimilar,
+    int index_to_remove_from_database)
+{
+  vector<double> u(28);
+  double sum=0;
+  for(int k=0;k<28;k++){
+    u[k]=i[i.size()-28+k];
+    sum+=u[k];
+  }
+  sum/=28;
+  for(int k=0;k<(int) u.size();k++) u[k]/=sum;
+  
+  vector<double> error(ir.size(),1e10);
+  for(int k=0;k<(int) ir.size();k++){
+    int dif=k-index_to_remove_from_database;
+    if(dif<7 && dif>-7) continue;
+    double L1=0;
+    for(int m=0;m<28;m++) L1+=fabs(u[m]-ir[k][m])*exp(-mu*(27-m));
+    error[k]=L1/28;
+  }
+  double per=percentil(Nsimilar,error);
+  //printf("per=%lf\n",per);
+  
+  //  double error_min=1e20;
+  //  int k_min;
+  //  for(int k=0;k<error.size();k++){
+  //    if(error[k]<error_min){
+  //      error_min=error[k];
+  //      k_min=k;
+  //    }
+  //  }
+  //  printf("error_min=%e k_min=%d\n",error_min,k_min); system("pause");
+  
+  vector<int> select;
+  for(int k=0;k<(int) ir.size();k++){
+    if(error[k]<per) select.push_back(k);
+  }
+  
+  return select;
+  
+}
+
+/// ----------------------------------------------------------------------------------------
+/// SUBSELECTION OF DATABASE CURVE SELECTION USING THE TREND SENTIMENT
+/// IT RETURNS THE DATABASE SELECTION UPDATED
+/// ----------------------------------------------------------------------------------------
+vector<int> trend_sentiment_database_curve_selection(
+    vector<int> &select /** ORIGINAL DATABASE SELECTION INDEXES */,
+    vector< vector <double > > &ir /** INCIDENCE DATABASE */,
+    double trend_sentiment  /** "A PRIORI" KNOWLEDGE ABOUT THE FUTURE INDICENDE EVOLUTION.*/
+){
+  
+  if(trend_sentiment==0) return select;
+  else if(trend_sentiment>0.9) trend_sentiment=0.9;
+  else if(trend_sentiment<-0.9) trend_sentiment=-0.9;
+  
+  vector<double> E(select.size());
+  
+  if(trend_sentiment>0){
+    for(int k=0;k<(int) E.size();k++) E[k]=ir[select[k]][55]-ir[select[k]][27];
+  }
+  else{
+    for(int k=0;k<(int) E.size();k++) E[k]=ir[select[k]][27]-ir[select[k]][55];
+  }
+  
+  double p=percentil((int) (E.size()*fabs(trend_sentiment)),E);
+  
+  vector<int> select2;
+  
+  for(int k=0;k<(int) E.size();k++){
+    if(E[k]>p) select2.push_back(select[k]);
+  }
+  
+  return select2;
+  
+}
+
+/// ----------------------------------------------------------------------------------------
+/// EXTRAPOLATION OF THE RESTORED INCIDENCE USING A LEARNING PROCEDURE BASED ON THE MEDIAN
+/// OF THE CLOSEST INCIDENCE CURVES IN THE DATABASE
+/// ----------------------------------------------------------------------------------------
+vector<double> IncidenceExtrapolationByLearningMedian(
+    vector<double> &i /** RESTORED INCIDENCE TO BE EXTRAPOLATED */,
+    vector< vector <double > > &ir /** INCIDENCE DATABASE */,
+    double mu /** PARAMETER OF THE CURVE DISTANCE FUNCTION */,
+    int NumberOfCurvesSelected /** NUMBER OF CURVES USED TO ESTIMATE THE FORECAST*/,
+    int index_to_remove_from_database /** INDEX TO REMOVE FROM THE DATASET OF INCIDENCE CURVE IN THE LEARNING STEP */,
+    double trend_sentiment /** "A PRIORI" KNOWLEDGE ABOUT THE FUTURE INDICENDE EVOLUTION.
+ == 0 MEANS THAT YOU ARE NEUTRAL ABOUT THE FUTURE TREND
+ > 0 MEANS THAT YOU EXPECT THAT THE FUTURE TREND IS HIGHER THAN THE
+ EXPECTED ONE USING ALL DATABASE CURVES. THE VALUE REPRESENTS
+ THE PERCENTAGE OF DATABASE BASE CURVES REMOVED BEFORE COMPUTING THE
+ FORECAST. THE CURVES REMOVED ARE THE ONES WITH LOWEST GROWTH IN THE
+ LAST 28 DAYS.
+ < 0 MEANS THAT YOU EXPECT THAT THE FUTURE TREND IS HIGHER THAN THE
+ EXPECTED ONE USING ALL DATABASE CURVES. THE MEANING OF THE VALUE IS
+ SIMILAR TO THE PROVIOUS CASE, BUT REMOVING THE CURVES WITH THE HIGHEST
+ GROWTH IN THE LAST 28 DAYS.
+ */
+)
+{
+  
+  /// WE INCLUDE THE LAST 28 INCIDENCE VALUES IN THE FIRST POSITIONS OF THE OUTPUT VECTOR
+  vector<double> v(56,0.);
+  for(int k=0;k<28;k++){
+    v[k]=i[i.size()-28+k];
+  }
+  
+  /// WE EXTRACT THE MOST SIMILAR CURVES IN THE DATABASE TO THE CURRENT ONE.
+  vector<int> select=extract_similar_from_database(i,ir,mu,NumberOfCurvesSelected,index_to_remove_from_database);
+  
+  /// WE REMOVE SOME SELECTED CURVES USING THE TREND SENTIMENT
+  if(trend_sentiment!=0){
+    select=trend_sentiment_database_curve_selection(select,ir,trend_sentiment);
+  }
+  
+  /// WE COMPUTE THE LAST 28 VALUES OF THE OUTPUT CURVES USING THE MEDIAN OF SELECTED CURVES.
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for(int k=28;k<56;k++){
+    vector<double> E(select.size());
+    for(int m=0;m<(int) E.size();m++){
+      E[m]=ir[select[m]][k]*v[27]/ir[select[m]][27];
+    }
+    v[k]=percentil((int) (E.size()*0.5),E);
+  }
+  
+  return v;
+  
+}
+
 
 ///----------------------------------------------------------------------------------------------------
 /// DATA PREPROCESSING : THE INPUT IS A MATRIX OF INCIDENCE VALUES (1 ROW PER COUNTRY)
@@ -83,26 +222,57 @@ void lack_of_data_processing (vector<double> &c){
   /// WE REMOVE FROM THE SEQUENCE THE LAST NON-POSITIVE VALUES.
   while( c[c.size()-1]<=0. && c.size()>0) c.resize(c.size()-1);
   
-  /// IF AN INCIDENCE VALUE IS POSITIVE AND THE PREVIOUS ONES ARE ZERO
-  /// WE ASSIGN TO ALL AFECTED VALUES A CONSTANT VALUE PRESERVING THE TOTAL NUMBER OF CASES.
-  /// THE MAXIMUM NUMBER OF ALLOWED CONSECUTIVE ZERO VALUES ARE 7.
-  for(int k=(int) c.size()-1; k>0;k--){
-    if(c[k]<0 || !(c[k-1]==0) ) continue;
-    int m=1;
-    while(m<7){
-      if(k-m-1<0 || !(c[k-m-1]==0) ) break;
-      m++;
+  // WE REMOVE THE LAST VALUE IF THEY ARE TOO SMALL
+  for(int k=c.size()-8; k<(int) c.size()-1 ;k++){
+    int m;
+    for(m=k+1;m<(int) c.size();m++){
+      if(50*c[m]>c[k]){ break;}
     }
-    if(m==7) break;
-    double average=c[k]/(m+1);
-    for(int n=k;n>=k-m;n--) c[n]=average;
-    k=k-m+1;
+    if(m==(int) c.size()){
+      c.resize(k+1);
+      break;
+    }
   }
   
   /// NEGATIVE INCIDENCE VALUES ARE NOT ALLOWED. WE REPLACE THEN BY 0.
   for(int k=0; k<(int) c.size();k++){
     if(c[k]<0) c[k]=0;
   }
+  
+  /// CONTROL ANOMALOUS VALUES TOO SMALL WITH RESPECT TO THE NEXT ONE
+  for(int k=c.size()-1; k>=0 ;k--){
+    if(c[k]<=1000) continue;
+    int m=k-1;
+    while(m>0){
+      if(50*c[m]>c[k]){ break;}
+      c[k]+=c[m];
+      c[m]=0;
+      m--;
+    }
+    k=m+1;
+    // if(c[k]>0 && c[k+1]>1000 && c[k+1]>50*c[k]){
+    //   //printf("%lf %lf\n",c[k],c[k+1]);
+    //   c[k]=0;
+    //   c[k+1]=c[k+1]+c[k];
+    // }
+  }
+  
+  /// IF AN INCIDENCE VALUE IS POSITIVE AND THE PREVIOUS ONES ARE ZERO
+  /// WE ASSIGN TO ALL AFECTED VALUES A CONSTANT VALUE PRESERVING THE TOTAL NUMBER OF CASES.
+  /// THE MAXIMUM NUMBER OF ALLOWED CONSECUTIVE ZERO VALUES ARE 21.
+  for(int k=(int) c.size()-1; k>0;k--){
+    if(c[k]<0 || !(c[k-1]==0) ) continue;
+    int m=1;
+    while(m<21){
+      if(k-m-1<0 || !(c[k-m-1]==0) ) break;
+      m++;
+    }
+    if(m==21) break;
+    double average=c[k]/(m+1);
+    for(int n=k;n>=k-m;n--) c[n]=average;
+    k=k-m+1;
+  }
+  
   
   return;
   
@@ -960,6 +1130,8 @@ void EpiInvertEstimate(
   i_bias_free=vector<double>(i_festive.size());
   for(int k=0;k< (int) i_bias_free.size();k++) i_bias_free[k]=i_festive[k]*seasonality[k];
   
+  
+  
   //for(int k=0;k<i_restored.size();k++) printf("%lf\n",i_restored[k]);
   
   /// ERROR ANALYSIS
@@ -969,21 +1141,24 @@ void EpiInvertEstimate(
     log_i_rest.push_back(log(i_restored[k]));
     log_abs_dif.push_back(log(fabs(i_bias_free[k]-i_restored[k])));
   }
-  double b;
-  linear_regression(log_i_rest,log_abs_dif,a,b);
-  //printf("a=%lf  b=%lf r=%lf size=%d\n",a,b,r, (int) log_i_rest.size());
+  double b=0;
   
-  vector<double> x,y,error(log_i_rest.size());
-  for(int k=0;k< (int) error.size();k++){ error[k]=fabs(a*log_i_rest[k]+b-log_abs_dif[k]);}
-  int perc=error.size()*0.95;
-  double Q95=percentil(perc,error);
-  for(int k=0;k< (int) error.size();k++){
-    if(error[k]<Q95){
-      x.push_back(log_i_rest[k]);
-      y.push_back(log_abs_dif[k]);
+  if(log_i_rest.size()>10){
+    linear_regression(log_i_rest,log_abs_dif,a,b);
+    //printf("a=%lf  b=%lf r=%lf size=%d\n",a,b,r, (int) log_i_rest.size());
+    
+    vector<double> x,y,error(log_i_rest.size());
+    for(int k=0;k< (int) error.size();k++){ error[k]=fabs(a*log_i_rest[k]+b-log_abs_dif[k]);}
+    int perc=error.size()*0.95;
+    double Q95=percentil(perc,error);
+    for(int k=0;k< (int) error.size();k++){
+      if(error[k]<Q95){
+        x.push_back(log_i_rest[k]);
+        y.push_back(log_abs_dif[k]);
+      }
     }
+    linear_regression(x,y,a,b);
   }
-  linear_regression(x,y,a,b);
   
   epsilon=vector<double>(i_bias_free.size(),0.);
   
@@ -1004,6 +1179,7 @@ void EpiInvertEstimate(
     dates[k]=string(buffer);
     festive[k]=daily_festive_day[k]==0?false:true;
   }
+  
 }
 
 /// ----------------------------------------------------------------------------------------
@@ -1016,10 +1192,10 @@ vector<double> IncidenceForecastByLearning(
     vector< vector <double > > &ir_database,
     double lambda /** PARAMETER IN THE WEIGHTED AVERAGE OF INCIDENCE SEQUENCES (IF NEGATIVE WE USE THE PRE-ESTIMATED ONES */,
                                                                                 double mu /** PARAMETER TO ESTIMATE THE DISTANCE BETWEEN RESTORED INCIDENCE CURVES*/,
-                                                                                vector <double> &CI50 /** 50% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
-                                                                                vector <double> &CI75 /** 75% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
-                                                                                vector <double> &CI90 /** 90% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
-                                                                                vector <double> &CI95 /** 95% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI025 /** 50% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI25 /** 75% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI75 /** 90% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                vector <double> &CI975 /** 95% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
                                                                                 vector <double> &i0_forecast /** FORECAST OF THE ORIGINAL INCIDENCE */,
                                                                                 vector<string> &dates /** DATE ASSOCIATED TO EACH INCIDENCE DATUM */
 )
@@ -1028,17 +1204,19 @@ vector<double> IncidenceForecastByLearning(
   if( ir.size()<28 || q.size()!=ir.size() ) return vector<double>();
   
   /// REFERENCE 50% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
-  double c50[28]={0.042508,0.054770,0.068168,0.081978,0.096363,0.111018,0.125447,0.139321,0.153157,0.167250,0.181470,0.195171,0.209277,0.223595,0.237681,0.251021,
-                  0.265775,0.279932,0.296414,0.312585,0.328543,0.345365,0.362289,0.380731,0.397672,0.415894,0.434526,0.453136};
+  double c025[28]={-0.155648,-0.213651,-0.274799,-0.332368,-0.386789,-0.436902,-0.483012,-0.524335,-0.561547,-0.594079,-0.624523,-0.653492,
+                   -0.678368,-0.701895,-0.724653,-0.744708,-0.763629,-0.780804,-0.795643,-0.811307,-0.824906,-0.837676,-0.848877,-0.860242,-0.871360,-0.881518,-0.890858,-0.899508};
   /// REFERENCE 75% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
-  double c75[28]={0.081978,0.105534,0.131015,0.157528,0.184099,0.211136,0.236895,0.261647,0.286255,0.310039,0.332936,0.355424,0.377950,0.399522,0.420463,0.441227,0.464055,
-                  0.486819,0.508160,0.528966,0.550036,0.570330,0.591685,0.611198,0.630934,0.650795,0.671670,0.690735};
+  double c25[28]={-0.054585,-0.083813,-0.115416,-0.147881,-0.179892,-0.210752,-0.240431,-0.269303,-0.297175,-0.323179,-0.348229,-0.371338,-0.393856,-0.415916,
+                  -0.436881,-0.456838,-0.475581,-0.493722,-0.511294,-0.528181,-0.544483,-0.559852,-0.574931,-0.590185,-0.604546,-0.619512,-0.635266,-0.650488};
   /// REFERENCE 90% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
-  double c90[28]={0.139130,0.178687,0.222212,0.268017,0.313669,0.358350,0.401996,0.444749,0.485644,0.524075,0.560992,0.592548,0.620591,0.648606,0.674875,0.699695,0.720586,
-                  0.744659,0.764860,0.784399,0.805348,0.825345,0.843817,0.865360,0.885556,0.903012,0.917678,0.936678};
+  double c75[28]={0.027751,0.029960,0.033056,0.035110,0.036210,0.036427,0.035174,0.033385,0.029911,0.026365,0.021923,0.018345,0.012847,0.008084,
+                  0.003451,-0.001439,-0.006705,-0.012636,-0.016472,-0.021102,-0.022011,-0.025470,-0.027572,-0.031472,-0.033926,-0.040183,-0.046985,-0.054033};
   /// REFERENCE 95% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
-  double c95[28]={0.194120,0.246874,0.305963,0.370376,0.438343,0.503850,0.568111,0.629777,0.691450,0.750809,0.812840,0.878160,0.933841,0.987263,1.044576,1.097479,1.164950,1.233489,
-                  1.287934,1.344992,1.422996,1.504297,1.587260,1.643302,1.721445,1.784263,1.845480,1.906459};
+  double c975[28]={0.213137,0.272156,0.349575,0.435782,0.526651,0.627352,0.725293,0.834043,0.932771,1.036104,1.151381,1.266980,1.386483,1.506732,
+                   1.598594,1.713786,1.811783,1.902273,2.022097,2.103708,2.234456,2.341081,2.454366,2.561716,2.652031,2.762484,2.863749,2.989503};
+  
+  
   
   /// NORMALIZATION OF THE LAST 28 DAYS OR THE RESTORED INCIDENCE
   vector<double> u(28);
@@ -1071,19 +1249,100 @@ vector<double> IncidenceForecastByLearning(
   /// WE STORE THE RESULTS
   vector<double> ir_forecast(28);
   i0_forecast=vector<double>(28);
-  CI50=vector<double>(28);
+  CI025=vector<double>(28);
+  CI25=vector<double>(28);
   CI75=vector<double>(28);
-  CI90=vector<double>(28);
-  CI95=vector<double>(28);
+  CI975=vector<double>(28);
   dates=vector<string>(28);
   
   for(int k=0;k<28;k++){
     ir_forecast[k]=v[k+28];
     i0_forecast[k]=ir_forecast[k]/q[q.size()-7+k%7];
-    CI50[k]=c50[k]*ir_forecast[k];
+    CI025[k]=c025[k]*ir_forecast[k];
+    CI25[k]=c25[k]*ir_forecast[k];
     CI75[k]=c75[k]*ir_forecast[k];
-    CI90[k]=c90[k]*ir_forecast[k];
-    CI95[k]=c95[k]*ir_forecast[k];
+    CI975[k]=c975[k]*ir_forecast[k];
+    time_t current_day = string2date(last_incidence_date.c_str());
+    time_t t2=current_day + (k+1)*86400+86400/2;
+    struct tm * timeinfo;
+    timeinfo = localtime (&t2);
+    char buffer [80];
+    strftime (buffer,80,"%Y-%m-%d",timeinfo);
+    dates[k]=string(buffer);
+  }
+  
+  //  /// TESTING
+  //  FILE *f;
+  //  f=fopen ("forecast.csv", "w");
+  //  fprintf(f,"date;ir_forecast;i0_forecast;CI95_ir_forecast -;CI95_ir_forecast +\n");
+  //  for(int k=0;k<28;k++){
+  //      fprintf(f,";%lf;%lf\n",v[k],ir[ir.size()-28+k]);
+  //  }
+  //  for(int k=0;k<28;k++){
+  //    fprintf(f,"%s;%lf;%lf;%lf;%lf\n",dates[k].c_str(),ir_forecast[k],i0_forecast[k],
+  //            ir_forecast[k]-CI95[k],ir_forecast[k]+CI95[k]);
+  //  }
+  //  fclose(f);
+  
+  
+  return ir_forecast;
+  
+}
+
+/// ----------------------------------------------------------------------------------------
+/// FORECAST OF THE RESTORED INCIDENCE USING A LEARNING PROCEDURE BASED ON THE MEDIAN
+/// ----------------------------------------------------------------------------------------
+vector<double> IncidenceForecastByLearningMedian(
+    vector<double> &ir /** RESTORED INCIDENCE TO BE FORECASTED */,
+    const string last_incidence_date /** DATE OF THE LAST DATA IN THE FORMAT YYYY-MM-DD */,
+    vector<double> &q /** 7-DAY QUASI-PERIODIC WEKLY BIAS CORRECTION FACTORS */,
+    vector< vector <double > > &ir_database,
+    int NpointMedian /** PARAMETER IN THE WEIGHTED AVERAGE OF INCIDENCE SEQUENCES (IF NEGATIVE WE USE THE PRE-ESTIMATED ONES */,
+                                                                                   double mu /** PARAMETER TO ESTIMATE THE DISTANCE BETWEEN RESTORED INCIDENCE CURVES*/,
+                                                                                   vector <double> &CI025 /** 50% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                   vector <double> &CI25 /** 75% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                   vector <double> &CI75 /** 90% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                   vector <double> &CI975 /** 95% CONFIDENCE INTERVAL RADIUS FOR THE FORECAST OF THE RESTORED INCIDENCE */,
+                                                                                   vector <double> &i0_forecast /** FORECAST OF THE ORIGINAL INCIDENCE */,
+                                                                                   vector<string> &dates /** DATE ASSOCIATED TO EACH INCIDENCE DATUM */,
+                                                                                   double trend_sentiment /** ==0 neutral */
+)
+{
+  /// WE CHECK THE INPUT
+  if( ir.size()<28 || q.size()!=ir.size() ) return vector<double>();
+  
+  /// REFERENCE 50% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c025[28]={-0.150220,-0.190551,-0.232814,-0.273297,-0.313275,-0.351545,-0.386452,-0.418440,-0.445482,-0.472068,-0.496362,-0.518447,
+                   -0.538971,-0.559973,-0.580425,-0.597870,-0.614772,-0.632574,-0.649056,-0.662912,-0.678351,-0.694358,-0.708271,-0.722624,-0.736742,-0.747011,-0.759299,-0.772147};
+  /// REFERENCE 75% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c25[28]={-0.042660,-0.054633,-0.067515,-0.080704,-0.094171,-0.107112,-0.120223,-0.133630,-0.145512,-0.157124,-0.168186,-0.179130,-0.190275,-0.202573,-0.213475,
+                  -0.224388,-0.235615,-0.245872,-0.256216,-0.267351,-0.278478,-0.290288,-0.300825,-0.311896,-0.322587,-0.333884,-0.346187,-0.356841};
+  /// REFERENCE 90% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c75[28]={0.042553,0.055071,0.069210,0.084014,0.099066,0.114805,0.131171,0.147492,0.164330,0.180080,0.196790,0.213662,0.229522,0.246002,
+                  0.262251,0.280358,0.300618,0.322197,0.342473,0.365029,0.387760,0.411162,0.438378,0.463211,0.490827,0.519744,0.547554,0.576660};
+  /// REFERENCE 95% CONFIDENCE INTERVAL RADIUS FOLLOWING THE FORECAST DAY
+  double c975[28]={0.245854,0.322511,0.414296,0.511352,0.620995,0.738772,0.862146,0.997616,1.136802,1.285196,1.435915,1.592728,1.745868,1.932828,
+                   2.125428,2.330880,2.549604,2.759963,3.014044,3.237459,3.493608,3.762829,4.028675,4.351678,4.689552,4.998785,5.398666,5.813771};
+  
+  
+  vector<double> v=IncidenceExtrapolationByLearningMedian(ir,ir_database,mu,NpointMedian,-20,trend_sentiment);
+  
+  /// WE STORE THE RESULTS
+  vector<double> ir_forecast(28);
+  i0_forecast=vector<double>(28);
+  CI025=vector<double>(28);
+  CI25=vector<double>(28);
+  CI75=vector<double>(28);
+  CI975=vector<double>(28);
+  dates=vector<string>(28);
+  
+  for(int k=0;k<28;k++){
+    ir_forecast[k]=v[k+28];
+    i0_forecast[k]=ir_forecast[k]/q[q.size()-7+k%7];
+    CI025[k]=c025[k]*ir_forecast[k];
+    CI25[k]=c25[k]*ir_forecast[k];
+    CI75[k]=c75[k]*ir_forecast[k];
+    CI975[k]=c975[k]*ir_forecast[k];
     time_t current_day = string2date(last_incidence_date.c_str());
     time_t t2=current_day + (k+1)*86400+86400/2;
     struct tm * timeinfo;

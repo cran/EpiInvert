@@ -7,50 +7,111 @@ using namespace std;
 
  // [[Rcpp::export]]
  List EpiInvertForecastC(
+     NumericVector i_original,
      NumericVector i_restored,
      String last_incidence_date,
      NumericVector q_bias,
-     NumericMatrix i_restored_database
+     NumericMatrix i_restored_database,
+     String type,
+     int NumberForecastAdditionalDays=0,
+     double trend_sentiment=0
  )
  {
    string last_incidence_dateC=string(last_incidence_date.get_cstring());/** DATE OF THE LAST DATA IN THE FORMAT YYYY-MM-DD */;
+   string typeC=string(type);
    
    vector< vector<double> > M(i_restored_database.nrow(),vector<double>(i_restored_database.ncol(),0.));
    //printf("%d %d\n",i_restored_database.ncol(),i_restored_database.nrow());
    for(int i=0;i<(int) M.size();i++){
      for(int j=0;j<(int) M[i].size();j++){
-       M[i][j]=i_restored_database(i,j); 
+       M[i][j]=i_restored_database(i,j);
      }
    }
    
-   vector<double> ir(i_restored.size()),q(q_bias.size());
+   vector<double> io(i_original.size()),ir(i_restored.size()),q(q_bias.size());
+   for(int k=0;k<(int) io.size();k++) io[k]=i_original[k];
    for(int k=0;k<(int) ir.size();k++) ir[k]=i_restored[k];
    for(int k=0;k<(int) q.size();k++) q[k]=q_bias[k];
+   vector<double> q2=q;
+   for(int k=q2.size()-1;k>7;k--) q2[k-7]=q2[k]; 
    
-   double lambda=176.8;
-   double mu=0.035;
-   vector <double> CI50,CI75,CI90,CI95,i0_forecast;
+   
+   vector <double> CI025,CI25,CI75,CI975,i0_forecast,v;
    vector<string> dates;
    
    //printf("ir.size()=%d, q.size()=%d, M.size()=%d\n",ir.size(),q.size(),M.size()); 
    //printf("ir[0]=%lf,q[0]=%lf,M[0][0]=%lf\n",ir[0],q[0],M[0][0]); 
    
    //return List::create(); 
+   if(typeC.compare(string("median"))==0){
+     double mu0=0.0475; 
+     int NpointMedian0=121;
+     v=IncidenceForecastByLearningMedian(
+       ir,
+       last_incidence_dateC,
+       q,
+       M,
+       NpointMedian0,
+       mu0,
+       CI025,
+       CI25,
+       CI75,
+       CI975,
+       i0_forecast,
+       dates,
+       trend_sentiment
+     );
+   }
+   else{
+     double lambda=108; 
+     double mu=0.0675;
+     v=IncidenceForecastByLearning(
+       ir,
+       last_incidence_dateC,
+       q,
+       M,
+       lambda,
+       mu,
+       CI025,
+       CI25,
+       CI75,
+       CI975,
+       i0_forecast,
+       dates
+     );
+   }
    
-   vector<double> v=IncidenceForecastByLearning(
-     ir,
-     last_incidence_dateC,
-     q,
-     M,
-     lambda,
-     mu,
-     CI50,
-     CI75,
-     CI90,
-     CI95,
-     i0_forecast,
-     dates
-   );
+   if(NumberForecastAdditionalDays>0){
+     int N = v.size(); 
+     double der1 = (3.*v[N-1]/2.+v[N-5]/2.-2*v[N-3])/2; 
+     double der2 = (11*v[N-1]-18*v[N-5]+9*v[N-9]-2*v[N-13])/24.;
+     double der = 0.75*der2+0.25*der1;
+     for(int i=1;i<=NumberForecastAdditionalDays;i++){
+       double x=v[N-1]+i*der; 
+       v.push_back(x);
+       i0_forecast.push_back(x/q[q.size()-7+(i-1)%7]);//q[q.size()-7+k%7]
+       CI025.push_back(CI025[N-1]);
+       CI25.push_back(CI25[N-1]);
+       CI75.push_back(CI75[N-1]);
+       CI975.push_back(CI975[N-1]);
+       time_t current_day = string2date(dates[N-1].c_str());
+       time_t t2=current_day + i*86400+86400/2;
+       struct tm * timeinfo;
+       timeinfo = localtime (&t2);
+       char buffer [80];
+       strftime (buffer,80,"%Y-%m-%d",timeinfo);
+       dates.push_back(string(buffer));
+     }
+     
+   }
+   
+   /// i0_forecast normalization
+   double sumr=0.,sumo=0.;
+   for(int k=(int) io.size()-1;k>=(int) io.size()-14;k--) sumo+=io[k];
+   for(int k=(int) ir.size()-1;k>=(int) ir.size()-14;k--) sumr+=ir[k]/q2[k];
+   double scale=sumo/sumr;
+   //printf("scale=%lf\n",scale); 
+   for(int k=0;k<(int) i0_forecast.size();k++) i0_forecast[k]*=scale; 
    
    
    //printf("M[0][0]=%lf M[0][1]=%lf, M[1][0]=%lf\n",M[0][0],M[0][1],M[1][0]);
@@ -58,10 +119,10 @@ using namespace std;
    
    List results = List::create(
      Named("i_restored_forecast") = v ,
-     Named("i_restored_forecast_CI50") = CI50 ,
-     Named("i_restored_forecast_CI75") = CI75 ,
-     Named("i_restored_forecast_CI90") = CI90 ,
-     Named("i_restored_forecast_CI95") = CI95 ,
+     Named("i_restored_forecast_CI025") = CI025 ,
+     //Named("i_restored_forecast_CI25") = CI25 ,
+     //Named("i_restored_forecast_CI75") = CI75 ,
+     Named("i_restored_forecast_CI975") = CI975 ,
      Named("dates")  = dates,
      Named("i_original_forecast")  = i0_forecast
    );
@@ -82,7 +143,8 @@ List EpiInvertC(
     double shift_si=-5.,
     double Rt_regularization_weight=5.,
     double seasonality_regularization_weight=5.,
-    bool incidence_weekly_aggregated=false
+    bool incidence_weekly_aggregated=false,
+    int NweeksToKeepIncidenceSum=2 
 ){
   clock_t t=clock();
   
@@ -93,8 +155,8 @@ List EpiInvertC(
   string last_incidence_dateC=string(last_incidence_date.get_cstring());/** DATE OF THE LAST DATA IN THE FORMAT YYYY-MM-DD */;
   vector <string> festive_daysC /** VECTOR OF FESTIVE OR ANOMALOUS DAYS IN THE FORMAT YYYY-MM-DD*/;
   for(int k=0;k<festive_days.size();k++) {
-    if(strlen(festive_days[k])==10 && (festive_days[k][0]=='2' || festive_days[k][0]=='1'))
-      festive_daysC.push_back(string(festive_days[k]));
+    if(strlen(festive_days[k])>=10 && (festive_days[k][0]=='2' || festive_days[k][0]=='1'))
+      festive_daysC.push_back(string(festive_days[k]).substr(0, 10));
   }
   
   /// OUTPUTS
@@ -111,8 +173,6 @@ List EpiInvertC(
   double power_a /** ESTIMATED POWER  IN THE RELATION i_bias_free[k] = i_restored[k] + epsilon[k]*i_restored[k]^a */;
   vector<double> epsilon /** ERROR DISTRIBUTION GIVEN BY  (i_bias_free[k] - i_restored[k])/i_restored[k]^a */;
   
-  /// FIXED INPUT PARAMETERS
-  int NweeksToKeepIncidenceSum=2 /** WE CONSTRAINT ALL THE ESTIMATED INCIDENCE CURVE TO KEEP THE ADDITION OF THE ORIGINAL INCIDENCE IN INTERVALS OF SIZE NweeksToKeepIncidenceSum*7 DAYS*/;
   
   Rprintf("EpiInvert parameters used: \n");
   Rprintf("Incidence tail : " );
