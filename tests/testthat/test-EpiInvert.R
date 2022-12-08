@@ -1,9 +1,10 @@
-test_that("EpiInvert using USA data", {
+test_that("EpiInvert", {
+  library(dplyr)
   data("incidence")
   data("festives")
   data("si_distr_data")
   
-  # test using parametric serial interval 
+  # test EpiInvert using parametric serial interval 
   res <- EpiInvert(incidence$USA,
                    incidence$date[length(incidence$date)],
                    festives$USA
@@ -11,7 +12,7 @@ test_that("EpiInvert using USA data", {
   x <- round(res$power_a+0.003,digits=2)
   expect_equal(x, 1.1)
   
-  # test using non parametric serial interval 
+  # test EpiInvert using non parametric serial interval 
   res <- EpiInvert(incidence$USA,
                    incidence$date[length(incidence$date)],
                    festives$USA,
@@ -27,7 +28,7 @@ test_that("EpiInvert using USA data", {
   x <- round(res$power_a+0.007,digits=2)
   expect_equal(x, 1.07)
   
-  # test using a different time interval 
+  # test EpiInvert using a different time interval 
   res <-  EpiInvert(incidence$USA,
                     incidence$date[length(incidence$date)],
                     festives$USA, 
@@ -36,7 +37,7 @@ test_that("EpiInvert using USA data", {
   x <- round(res$power_a-0.005,digits=2)
   expect_equal(x, 0.59)
   
-  # test using a different parametric serial interval 
+  # test EpiInvert using a different parametric serial interval 
   res <-  EpiInvert(incidence$USA,
                     incidence$date[length(incidence$date)],
                     festives$USA, 
@@ -46,7 +47,7 @@ test_that("EpiInvert using USA data", {
   x <- round(res$power_a-0.003,digits=2)
   expect_equal(x,1.03)
   
-  # test using different regularization values
+  # test EpiInvert using different regularization values
   res <-  EpiInvert(incidence$USA,
                     incidence$date[length(incidence$date)],
                     festives$USA, 
@@ -54,17 +55,24 @@ test_that("EpiInvert using USA data", {
   x <- round(res$power_a-0.003,digits=2)
   expect_equal(x,1.05)
   
-  # test using weekly aggregated incidence 
+  # test EpiInvert using weekly aggregated incidence 
   data(incidence_weekly_aggregated)
   res <- EpiInvert(incidence_weekly_aggregated$FRA,"2022-05-05",festives$FRA,
                     select_params(list(incidence_weekly_aggregated = TRUE)))
   x <- round(res$power_a-0.049315,digits=1)
   expect_equal(x,1.2)
   
-  # EpiInvertForecast function test
+  # test EpiInvertForecast
   data("restored_incidence_database")
   forecast <-  EpiInvertForecast(res,restored_incidence_database)
-  x <- round(forecast$i_restored_forecast[1]/10-0.824,digits=0)
-  expect_equal(x,3598)
+  x <- round(forecast$i_restored_forecast[1]/10-0.492,digits=0)
+  expect_equal(x,3594)
   
+  # test EpiIndicators
+  data("owid")
+  sel <- dplyr::filter(owid,iso_code=="FRA")
+  df<-data.frame(sel$date,sel$new_cases_restored_EpiInvert,sel$new_deaths_restored_EpiInvert)
+  res <- EpiIndicators(df)
+  x <- round(res$r[1]*10000-0.0588,digits=0)
+  expect_equal(x,374)
 })
