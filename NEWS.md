@@ -1,4 +1,10 @@
-# EpiInvert 0.3.0 
+# EpiInvert 0.3.1 (December 2022)
+
+* We fixed an error running ‘testthat.R’ in "r-release-macos-arm64" and 
+"r-oldrel-macos-arm64"  due to  differences in the quality of floating point 
+arithmetic operations. 
+
+# EpiInvert 0.3.0 (December 2022)
 
 * We include EpiIndicators, a procedure for the estimation of the delay and ratio between epidemiological indicators.
 
